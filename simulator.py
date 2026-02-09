@@ -6,8 +6,8 @@ import numpy as np
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict
 
-from .player import Player, RaidPlayer
-from .config import ExperimentConfig
+from player import Player, RaidPlayer
+from config import ExperimentConfig
 
 
 @dataclass

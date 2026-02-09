@@ -5,7 +5,7 @@ Base matchmaker class and common utilities.
 from abc import ABC, abstractmethod
 from typing import List
 
-from ..player import Player
+from player import Player
 
 
 class Matchmaker(ABC):

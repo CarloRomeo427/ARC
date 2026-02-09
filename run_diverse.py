@@ -8,8 +8,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from arc_matchmaking import ExperimentConfig, ExperimentRunner, DiverseMatchmaker
-
+from config import ExperimentConfig
+from runner import ExperimentRunner
+from algorithms.diverse import DiverseMatchmaker
 
 def main():
     config = ExperimentConfig(

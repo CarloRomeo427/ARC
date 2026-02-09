@@ -7,10 +7,10 @@ import wandb
 import time
 from typing import Dict
 
-from .config import ExperimentConfig
-from .player import PlayerPool
-from .simulator import RaidRunner, compute_reward
-from .algorithms import Matchmaker
+from config import ExperimentConfig
+from player import PlayerPool
+from simulator import RaidRunner, compute_reward
+from algorithms import Matchmaker
 
 
 class ExperimentRunner:

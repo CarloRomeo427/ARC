@@ -8,7 +8,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from arc_matchmaking import ExperimentConfig, ExperimentRunner, RandomMatchmaker
+
+from config import ExperimentConfig
+from runner import ExperimentRunner
+from algorithms.random import RandomMatchmaker
 
 
 def main():

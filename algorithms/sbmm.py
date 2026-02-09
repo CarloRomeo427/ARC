@@ -5,7 +5,7 @@ SBMM Matchmaker - Skill-Based Matchmaking (group similar aggression).
 from typing import List
 
 from .base import Matchmaker
-from ..player import Player
+from player import Player
 
 
 class SBMMMatchmaker(Matchmaker):

@@ -8,7 +8,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from arc_matchmaking import ExperimentConfig, ExperimentRunner, SBMMMatchmaker
+from config import ExperimentConfig
+from runner import ExperimentRunner
+from algorithms.sbmm import SBMMMatchmaker
 
 
 def main():

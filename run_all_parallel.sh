@@ -32,7 +32,7 @@ echo "  SBMM:      $PID_SBMM"
 echo "  Diverse:   $PID_DIVERSE"
 echo ""
 echo "Monitor with: tail -f logs/*.log"
-echo "Check wandb: https://wandb.ai/YOUR_USERNAME/ARC"
+echo "Check wandb: https://wandb.ai/carlo-romeo-alt427/ARC"
 echo ""
 
 # Wait for all to complete
