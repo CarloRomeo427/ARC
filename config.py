@@ -9,27 +9,27 @@ from dataclasses import dataclass
 class ExperimentConfig:
     """Standardized experiment configuration."""
     # Pool
-    num_players: int = 1200
+    num_players: int = 120
     lobby_size: int = 12
-    raids_per_episode: int = 100  # 1200 / 12 = 100 raids to match all players
-    
+    raids_per_episode: int = 10  # 120 / 12
+
     # Repetitions
-    raid_repetitions: int = 10  # Average over 10 runs per raid
-    num_episodes: int = 10000
-    
+    raid_repetitions: int = 5
+    num_episodes: int = 3000
+
     # Seeds
-    master_seed: int = 42  # Controls player initialization
-    
+    master_seed: int = 42
+
     # Wandb
     wandb_project: str = "ARC"
-    
+
     # Raid settings
     aggression_noise_std: float = 0.05
-    
+
     # Map settings
     map_radius: float = 100.0
     num_loot_zones: int = 8
-    
+
     # Raid settings
     max_ticks: int = 500
     sight_radius: float = 15.0
