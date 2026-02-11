@@ -2,12 +2,26 @@
 Raid simulation: map, loot zones, extraction points, and raid logic.
 """
 
+import random
 import numpy as np
+import torch
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict
 
 from player import Player, RaidPlayer
 from config import ExperimentConfig
+
+
+def seed_everything(seed: int):
+    """Set all PRNG seeds for full reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
 
 
 @dataclass
@@ -61,29 +75,45 @@ class ExtractionPoint:
 
 
 class GameMap:
-    def __init__(self, config: ExperimentConfig):
+    """
+    Game map with fixed structure and per-raid loot randomization.
+
+    Like real extraction shooters: the map layout (loot zone positions,
+    extraction points) is generated once from a seed and never changes.
+    Only the loot contents (item counts, value multipliers) are
+    re-randomized each raid via reset().
+    """
+
+    def __init__(self, config: ExperimentConfig, map_seed: int):
         self.config = config
         self.radius = config.map_radius
         self.loot_zones: List[LootZone] = []
         self.extraction_points: List[ExtractionPoint] = []
-        self._generate_map()
+        self._generate_fixed_layout(map_seed)
 
-    def _generate_map(self):
+    def _generate_fixed_layout(self, seed: int):
+        """Generate map structure once. Positions and radii are permanent."""
+        rng = np.random.RandomState(seed)  # local RNG, won't touch global state
         max_dist = 0.5 * self.radius
+
         self.loot_zones = []
         for _ in range(self.config.num_loot_zones):
             for _ in range(100):
-                angle = np.random.uniform(0, 2 * np.pi)
-                dist = np.random.uniform(0, max_dist)
+                angle = rng.uniform(0, 2 * np.pi)
+                dist = rng.uniform(0, max_dist)
                 x, y = dist * np.cos(angle), dist * np.sin(angle)
-                radius = np.random.uniform(5, 15)
-                if all(np.sqrt((x-z.x)**2 + (y-z.y)**2) >= radius + z.radius + 5
+                radius = rng.uniform(5, 15)
+                if all(np.sqrt((x - z.x)**2 + (y - z.y)**2) >= radius + z.radius + 5
                        for z in self.loot_zones):
                     if dist + radius <= max_dist + 10:
-                        area = np.pi * radius**2
-                        items = max(3, int(area * 0.3))
-                        self.loot_zones.append(LootZone(x, y, radius, items, items, radius/5))
+                        # Position and radius are fixed; items/value set per-raid in reset()
+                        self.loot_zones.append(LootZone(
+                            x=x, y=y, radius=radius,
+                            total_items=0, remaining_items=0,
+                            value_multiplier=1.0,
+                        ))
                         break
+
         d = 0.9 * self.radius
         self.extraction_points = [
             ExtractionPoint(0, d, 5.0, "N"),
@@ -91,6 +121,21 @@ class GameMap:
             ExtractionPoint(d, 0, 5.0, "E"),
             ExtractionPoint(-d, 0, 5.0, "W"),
         ]
+
+    def reset(self):
+        """
+        Randomize loot contents for a new raid. Map structure stays fixed.
+
+        Uses the current global numpy state, which should be seeded
+        deterministically by the raid runner before calling this.
+        """
+        for z in self.loot_zones:
+            base_items = max(3, int(np.pi * z.radius**2 * 0.3))
+            z.total_items = max(1, int(np.random.normal(base_items, base_items * 0.2)))
+            z.remaining_items = z.total_items
+            z.value_multiplier = max(0.3, np.random.normal(z.radius / 5, 0.3))
+        for e in self.extraction_points:
+            e.reset()
 
     def get_spawn_positions(self, n: int) -> List[Tuple[float, float]]:
         spawn_radius = 0.9 * self.radius
@@ -112,12 +157,6 @@ class GameMap:
     def tick_extractions(self):
         for ext in self.extraction_points:
             ext.tick_cooldown()
-
-    def reset(self):
-        for z in self.loot_zones:
-            z.reset()
-        for e in self.extraction_points:
-            e.reset()
 
 
 class Raid:
@@ -279,7 +318,8 @@ class Raid:
 class RaidRunner:
     def __init__(self, config: ExperimentConfig):
         self.config = config
-        self.game_map = GameMap(config)
+        # Map layout is fixed for the entire experiment, seeded from master_seed
+        self.game_map = GameMap(config, map_seed=config.master_seed)
 
     def run_single_raid(self, lobby: List[Player]) -> List[dict]:
         self.game_map.reset()
@@ -299,7 +339,9 @@ class RaidRunner:
                       'dmg_recv': 0, 'kills': 0, 'aggr': 0}
                for p in lobby}
         for rep in range(self.config.raid_repetitions):
-            np.random.seed(base_seed + rep)
+            raid_seed = base_seed + rep
+            np.random.seed(raid_seed)
+            random.seed(raid_seed)
             results = self.run_single_raid(lobby)
             for r in results:
                 pid = r['persistent_id']

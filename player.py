@@ -121,7 +121,6 @@ class PlayerPool:
         for i in range(num_players):
             aggr = np.random.uniform(0.05, 0.95)
             self.players[i] = Player(id=i, aggression=aggr)
-        np.random.seed(None)
 
     def get_all_players(self) -> List[Player]:
         return list(self.players.values())

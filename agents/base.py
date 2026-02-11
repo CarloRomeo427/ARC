@@ -105,7 +105,7 @@ class Agent(ABC):
         run = wandb.init(
             project=self.config.wandb_project,
             name=self.name,
-            config={**self.config.__dict__, 'algorithm': self.name},
+            config={**self.config.__dict__, 'algorithm': self.name, 'seed': self.config.master_seed},
         )
 
         self.before_training(pool)
