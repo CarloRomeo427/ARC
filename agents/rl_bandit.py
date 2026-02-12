@@ -153,7 +153,8 @@ class RLBanditAgent(Agent):
     # ------------------------------------------------------------------
 
     def run_episode(self, pool: PlayerPool, episode_num: int) -> dict:
-        players = pool.get_all_players()
+        # Sample who's online this episode
+        players = pool.sample_queue(self.config.queue_size)
         lobby_size = self.config.lobby_size
 
         # --- Forward pass on GPU ---
@@ -202,8 +203,6 @@ class RLBanditAgent(Agent):
                 r = results[p.id]
                 p.record_raid(r['extracted'], r['stash'], r['damage_dealt'],
                               r['damage_received'], int(round(r['kills'])), r['aggression_used'])
-                p.update_aggression(r['extracted'], int(round(r['kills'])),
-                                    r['damage_dealt'], r['damage_received'], r['aggression_used'])
 
         # --- Policy gradient update (GPU) ---
         mean_reward = np.mean(lobby_rewards)

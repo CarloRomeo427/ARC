@@ -8,14 +8,19 @@ from dataclasses import dataclass
 @dataclass
 class ExperimentConfig:
     """Standardized experiment configuration."""
-    # Pool
-    num_players: int = 120
+    # Pool & queue
+    pool_size: int = 1200          # Total player population
+    queue_size: int = 120         # Players sampled per episode (who's online)
     lobby_size: int = 12
-    raids_per_episode: int = 10  # 120 / 12
+    raids_per_episode: int = 10   # queue_size / lobby_size
+
+    # Player churn
+    churn_interval: int = 50      # Every N episodes, replace some players
+    churn_count: int = 5          # How many players to retire/replace per churn
 
     # Repetitions
     raid_repetitions: int = 5
-    num_episodes: int = 3000
+    num_episodes: int = 100_000
 
     # Seeds
     master_seed: int = 42

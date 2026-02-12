@@ -54,7 +54,8 @@ class Agent(ABC):
 
     def run_episode(self, pool: PlayerPool, episode_num: int) -> dict:
         """Run one episode. Learning agents can override this entirely."""
-        players = pool.get_all_players()
+        # Sample who's online this episode
+        players = pool.sample_queue(self.config.queue_size)
         lobbies = self.create_lobbies(players, self.config.lobby_size)
         classifications = {p.id: p.classification for p in players}
 
@@ -81,8 +82,6 @@ class Agent(ABC):
                 r = results[p.id]
                 p.record_raid(r['extracted'], r['stash'], r['damage_dealt'],
                               r['damage_received'], int(round(r['kills'])), r['aggression_used'])
-                p.update_aggression(r['extracted'], int(round(r['kills'])),
-                                    r['damage_dealt'], r['damage_received'], r['aggression_used'])
 
         return {
             'avg_reward': np.mean(all_rewards),
@@ -100,7 +99,7 @@ class Agent(ABC):
 
     def run(self) -> PlayerPool:
         """Run the full experiment with wandb logging."""
-        pool = PlayerPool(self.config.num_players, self.config.master_seed)
+        pool = PlayerPool(self.config.pool_size, self.config.master_seed)
 
         run = wandb.init(
             project=self.config.wandb_project,
@@ -111,9 +110,17 @@ class Agent(ABC):
         self.before_training(pool)
 
         print(f"\nRunning {self.name} for {self.config.num_episodes} episodes...")
+        print(f"  Pool: {self.config.pool_size} | Queue: {self.config.queue_size} | "
+              f"Churn: {self.config.churn_count} every {self.config.churn_interval} eps")
         start_time = time.time()
 
         for episode in range(self.config.num_episodes):
+            # Player churn: retire and replace periodically
+            if episode > 0 and episode % self.config.churn_interval == 0:
+                pool.churn(self.config.churn_count)
+
+            metrics = self.run_episode(pool, episode)
+            pool_stats = pool.get_stats()
             metrics = self.run_episode(pool, episode)
             pool_stats = pool.get_stats()
 
@@ -132,6 +139,8 @@ class Agent(ABC):
                 'pool_passive_count': pool_stats['passive_count'],
                 'pool_neutral_count': pool_stats['neutral_count'],
                 'pool_aggressive_count': pool_stats['aggressive_count'],
+                'pool_size': pool_stats['pool_size'],
+                'total_players_seen': pool_stats['total_players_seen'],
             }
             # Merge any extra keys from learning agents
             for k, v in metrics.items():

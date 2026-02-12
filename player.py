@@ -9,9 +9,14 @@ from typing import Dict, List, Optional
 
 @dataclass
 class Player:
-    """Persistent player with running statistics."""
+    """
+    Persistent player with running statistics.
+    
+    Aggression is fixed at init and never changes. Per-raid noise is
+    applied transiently via get_raid_aggression().
+    """
     id: int
-    aggression: float
+    aggression: float  # Fixed personality, set at init
 
     total_raids: int = 0
     total_extractions: int = 0
@@ -32,10 +37,9 @@ class Player:
 
     @property
     def classification(self) -> str:
-        ra = self.running_aggression
-        if ra < 0.4:
+        if self.aggression < 0.4:
             return "passive"
-        elif ra > 0.6:
+        elif self.aggression > 0.6:
             return "aggressive"
         return "neutral"
 
@@ -81,28 +85,6 @@ class Player:
         else:
             self.total_deaths += 1
 
-    def update_aggression(self, extracted: bool, kills: int, damage_dealt: float,
-                          damage_received: float, aggression_used: float,
-                          learning_rate: float = 0.03):
-        delta = 0.0
-        if extracted:
-            if kills > 0:
-                delta += learning_rate * (0.4 + kills * 0.15)
-            else:
-                delta -= learning_rate * 0.6
-        else:
-            if aggression_used > 0.5:
-                delta -= learning_rate * 0.5
-            else:
-                delta -= learning_rate * 0.3
-        if damage_dealt > 100:
-            delta += learning_rate * 0.2
-        elif damage_dealt < 30:
-            delta -= learning_rate * 0.2
-        if 0.4 < self.aggression < 0.6:
-            delta += learning_rate * 0.1 * (0.5 - self.aggression)
-        self.aggression = np.clip(self.aggression + delta, 0.0, 1.0)
-
     def copy(self) -> 'Player':
         p = Player(id=self.id, aggression=self.aggression)
         for attr in ['total_raids', 'total_extractions', 'total_deaths', 'total_kills',
@@ -113,14 +95,45 @@ class Player:
 
 
 class PlayerPool:
-    """Pool of persistent players."""
+    """
+    Pool of persistent players with queue sampling and churn.
 
-    def __init__(self, num_players: int, seed: int):
+    Each episode, a random subset (the queue) is drawn from the pool.
+    Periodically, some players are retired and replaced with fresh ones,
+    simulating population churn in a live game.
+    """
+
+    def __init__(self, pool_size: int, seed: int):
         np.random.seed(seed)
         self.players: Dict[int, Player] = {}
-        for i in range(num_players):
-            aggr = np.random.uniform(0.05, 0.95)
-            self.players[i] = Player(id=i, aggression=aggr)
+        self._next_id = 0
+        for _ in range(pool_size):
+            self._spawn_player()
+
+    def _spawn_player(self) -> Player:
+        """Create a new player with random aggression and zero history."""
+        aggr = np.random.uniform(0.05, 0.95)
+        p = Player(id=self._next_id, aggression=aggr)
+        self.players[self._next_id] = p
+        self._next_id += 1
+        return p
+
+    def sample_queue(self, queue_size: int) -> List[Player]:
+        """Sample a random subset of players (who's online this episode)."""
+        all_players = list(self.players.values())
+        indices = np.random.choice(len(all_players), size=min(queue_size, len(all_players)),
+                                   replace=False)
+        return [all_players[i] for i in indices]
+
+    def churn(self, count: int):
+        """Retire `count` random players and replace with fresh ones."""
+        pids = list(self.players.keys())
+        if count >= len(pids):
+            return
+        retire_ids = np.random.choice(pids, size=count, replace=False)
+        for pid in retire_ids:
+            del self.players[pid]
+            self._spawn_player()
 
     def get_all_players(self) -> List[Player]:
         return list(self.players.values())
@@ -133,8 +146,9 @@ class PlayerPool:
 
     def get_stats(self) -> dict:
         players = self.get_all_players()
-        aggr = [p.running_aggression for p in players]
+        aggr = [p.aggression for p in players]
         groups = self.get_players_by_classification()
+        experienced = [p for p in players if p.total_raids > 0]
         return {
             'aggression_mean': np.mean(aggr),
             'aggression_std': np.std(aggr),
@@ -143,12 +157,15 @@ class PlayerPool:
             'aggressive_count': len(groups['aggressive']),
             'total_extractions': sum(p.total_extractions for p in players),
             'total_deaths': sum(p.total_deaths for p in players),
-            'avg_extraction_rate': np.mean([p.extraction_rate for p in players]) if players[0].total_raids > 0 else 0,
+            'avg_extraction_rate': np.mean([p.extraction_rate for p in experienced]) if experienced else 0,
+            'pool_size': len(self.players),
+            'total_players_seen': self._next_id,
         }
 
     def copy(self) -> 'PlayerPool':
         new_pool = PlayerPool.__new__(PlayerPool)
         new_pool.players = {pid: p.copy() for pid, p in self.players.items()}
+        new_pool._next_id = self._next_id
         return new_pool
 
 
