@@ -200,6 +200,8 @@ class RaidPlayer:
     damage_dealt: float = 0.0
     damage_received: float = 0.0
     kills: int = 0
+    items_looted: float = 0.0
+    encounters: int = 0
 
     def is_alive(self) -> bool:
         return self.alive and self.hp > 0
@@ -272,11 +274,13 @@ class RaidPlayer:
 
     def to_result(self) -> dict:
         return {
-            'persistent_id': self.persistent_id,
-            'extracted': self.extracted,
-            'stash': self.stash if self.extracted else 0,
-            'damage_dealt': self.damage_dealt,
+            'persistent_id':   self.persistent_id,
+            'extracted':       self.extracted,
+            'stash':           self.stash if self.extracted else 0,
+            'items_looted':    self.items_looted if self.extracted else 0.0,
+            'damage_dealt':    self.damage_dealt,
             'damage_received': self.damage_received,
-            'kills': self.kills,
+            'kills':           self.kills,
+            'encounters':      self.encounters,
             'aggression_used': self.aggression,
         }

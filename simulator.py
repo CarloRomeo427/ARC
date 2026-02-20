@@ -94,7 +94,7 @@ class GameMap:
     def _generate_fixed_layout(self, seed: int):
         """Generate map structure once. Positions and radii are permanent."""
         rng = np.random.RandomState(seed)  # local RNG, won't touch global state
-        max_dist = 0.5 * self.radius
+        max_dist = 0.55 * self.radius
 
         self.loot_zones = []
         for _ in range(self.config.num_loot_zones):
@@ -214,6 +214,8 @@ class Raid:
             a, d = (p1, p2) if np.random.random() < p1.aggression/(p1.aggression+p2.aggression+0.01) else (p2, p1)
         a.start_combat(d.id, True)
         d.start_combat(a.id, False)
+        a.encounters += 1
+        d.encounters += 1
 
     def process_combat(self, p: RaidPlayer):
         if not p.is_in_combat():
@@ -298,6 +300,7 @@ class Raid:
             v = zone.loot_item()
             if v:
                 p.stash += v
+                p.items_looted += v
             return
         p.move_toward(p.target_x, p.target_y, self.map.radius)
 
