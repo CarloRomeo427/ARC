@@ -46,20 +46,20 @@ class SingleRaidConfig:
     player features, not identities.
     """
     # Population
-    pool_size: int  = 1200        # Persistent player population
-    queue_size: int = 120         # Players online / available each episode
-    lobby_size: int = 12          # Players selected into the raid
+    pool_size: int  = 1200
+    queue_size: int = 120
+    lobby_size: int = 12
 
     # Training
     num_episodes: int = 50_000
     master_seed: int = 42
 
     # RLOO (RL bandit only)
-    rloo_k: int = 8               # Parallel lobby samples per episode
+    rloo_k: int = 8
 
     # Player churn
     churn_interval: int = 50
-    churn_count: int = 10         # Slightly higher churn to keep pool fresh
+    churn_count: int = 10
 
     # Simulation averaging
     raid_repetitions: int = 5
@@ -70,7 +70,7 @@ class SingleRaidConfig:
     # Physics
     aggression_noise_std: float = 0.05
     map_radius: float = 100.0
-    num_loot_zones: int = 8
+    num_loot_zones: int = 20      # increased for radial hot/cold gradient
     max_ticks: int = 500
     sight_radius: float = 10.0
     extraction_time: int = 30
@@ -80,3 +80,4 @@ class SingleRaidConfig:
     flee_base: float = 0.3
     post_combat_cooldown: int = 15
     heal_on_kill: float = 5.0
+    loot_ticks_per_item: int = 3      # ticks to collect one item; slows looting, increases fight exposure

@@ -4,19 +4,24 @@ Player classes for persistent and transient (raid) players.
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 
 @dataclass
 class Player:
     """
     Persistent player with running statistics.
-    
+
     Aggression is fixed at init and never changes. Per-raid noise is
     applied transiently via get_raid_aggression().
+
+    stash_threshold: the loot value at which this player decides to
+    head to extraction. Sampled once at creation [80_000, 200_000] and
+    constant across all raids, including repetitions of the same episode.
     """
     id: int
-    aggression: float  # Fixed personality, set at init
+    aggression: float
+    stash_threshold: float = 140_000.0   # set by PlayerPool._spawn_player
 
     total_raids: int = 0
     total_extractions: int = 0
@@ -86,7 +91,8 @@ class Player:
             self.total_deaths += 1
 
     def copy(self) -> 'Player':
-        p = Player(id=self.id, aggression=self.aggression)
+        p = Player(id=self.id, aggression=self.aggression,
+                   stash_threshold=self.stash_threshold)
         for attr in ['total_raids', 'total_extractions', 'total_deaths', 'total_kills',
                      'total_stash', 'total_damage_dealt', 'total_damage_received',
                      'aggression_sum', 'aggression_count']:
@@ -112,21 +118,20 @@ class PlayerPool:
 
     def _spawn_player(self) -> Player:
         """Create a new player with random aggression and zero history."""
-        aggr = np.random.uniform(0.05, 0.95)
-        p = Player(id=self._next_id, aggression=aggr)
+        aggr      = np.random.uniform(0.05, 0.95)
+        threshold = np.random.uniform(80_000, 200_000)
+        p = Player(id=self._next_id, aggression=aggr, stash_threshold=threshold)
         self.players[self._next_id] = p
         self._next_id += 1
         return p
 
     def sample_queue(self, queue_size: int) -> List[Player]:
-        """Sample a random subset of players (who's online this episode)."""
         all_players = list(self.players.values())
         indices = np.random.choice(len(all_players), size=min(queue_size, len(all_players)),
                                    replace=False)
         return [all_players[i] for i in indices]
 
     def churn(self, count: int):
-        """Retire `count` random players and replace with fresh ones."""
         pids = list(self.players.keys())
         if count >= len(pids):
             return
@@ -171,12 +176,24 @@ class PlayerPool:
 
 @dataclass
 class RaidPlayer:
-    """Transient player for single raid."""
+    """
+    Transient player for a single raid.
+
+    visited_zones: set of zone_id integers the player has physically
+    reached this raid. Used for partial-observability targeting — the
+    player knows which zones they've already found empty and avoids
+    revisiting them.
+
+    stash_threshold: inherited from the persistent Player. When stash
+    reaches this value the player voluntarily heads to extraction,
+    regardless of remaining loot zones.
+    """
     id: int
     persistent_id: int
     x: float
     y: float
     aggression: float
+    stash_threshold: float = 140_000.0
 
     hp: float = 100.0
     stash: float = 0.0
@@ -202,6 +219,22 @@ class RaidPlayer:
     kills: int = 0
     items_looted: float = 0.0
     encounters: int = 0
+
+    # Partial observability: zones this player has physically visited
+    visited_zones: Set[int] = field(default_factory=set)
+
+    # Per-player private valuation of zones, sampled once at raid start.
+    # Dict[zone_id -> float].  Drives divergent routing between players.
+    personal_zone_scores: dict = field(default_factory=dict)
+
+    # Zone the player is currently committed to heading toward.
+    # None = no commitment (re-evaluate on next tick).
+    # Cleared when the player arrives at the zone (visits it).
+    current_zone_target: int = -1   # -1 == no target locked
+
+    # Countdown ticks before the current item is collected.
+    # Reset to loot_ticks_per_item when a new item starts; 0 = ready.
+    loot_ticks_remaining: int = 0
 
     def is_alive(self) -> bool:
         return self.alive and self.hp > 0
