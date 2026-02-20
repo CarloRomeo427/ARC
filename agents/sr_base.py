@@ -1,13 +1,11 @@
 """
 Base class for all single-raid matchmaking agents.
 
-Changes in this version
------------------------
-  1. Reward: uses compute_reward_sr from sr_reward.py (loot + encounters).
-  2. Aggression distribution: logs wandb.Histogram for both the full pool
-     and the selected lobby every episode.
-  3. GIF logging: every GIF_LOG_INTERVAL episodes, renders one raid from
-     the current episode to a GIF and logs it to wandb.
+Changes:
+  - compute_reward_sr now receives stash_budget (sum of lobby stash thresholds).
+    No magic LOOT_NORM constant — normalisation is the actual economic demand
+    of the lobby.
+  - Aggression distribution histograms, GIF logging, entropy annealing unchanged.
 """
 
 from abc import ABC, abstractmethod
@@ -23,7 +21,7 @@ from player import Player, PlayerPool
 from simulator import RaidRunner
 from sr_reward import compute_reward_sr
 
-GIF_LOG_INTERVAL = 1000   # log a raid GIF every this many episodes
+GIF_LOG_INTERVAL = 1000
 
 
 class SingleRaidAgent(ABC):
@@ -100,7 +98,6 @@ class SingleRaidAgent(ABC):
     # ------------------------------------------------------------------
 
     def _maybe_log_gif(self, lobby: List[Player], episode_num: int):
-        """Render and log one raid GIF to wandb every GIF_LOG_INTERVAL eps."""
         if episode_num % GIF_LOG_INTERVAL != 0:
             return
         try:
@@ -124,9 +121,13 @@ class SingleRaidAgent(ABC):
         queue = pool.sample_queue(self.config.queue_size)
         lobby = self.select_lobby(queue)
 
+        # stash_budget: the concrete economic demand of this lobby.
+        # Normalises extracted loot without any calibrated magic numbers.
+        stash_budget = sum(p.stash_threshold for p in lobby)
+
         all_results = self._simulate_lobbies([lobby], episode_num)
         results     = all_results[0]
-        ri          = compute_reward_sr(results)
+        ri          = compute_reward_sr(results, stash_budget, self.config.lobby_size)
 
         for p in lobby:
             r = results[p.id]
@@ -156,6 +157,7 @@ class SingleRaidAgent(ABC):
             'lobby_n_neutral':     sum(1 for p in lobby if p.classification=='neutral'),
             'lobby_n_aggressive':  sum(1 for p in lobby if p.classification=='aggressive'),
             '_lobby_aggr':         lobby_aggr,
+            'stash_budget':        stash_budget,
         }
 
     # ------------------------------------------------------------------
@@ -198,7 +200,6 @@ class SingleRaidAgent(ABC):
             if len(reward_window) > 100:
                 reward_window.pop(0)
 
-            # Pull and remove the raw arrays before passing to wandb
             lobby_aggr = metrics.pop('_lobby_aggr', [])
             pool_aggr  = [p.running_aggression for p in pool.get_all_players()]
 
@@ -213,6 +214,7 @@ class SingleRaidAgent(ABC):
                 'total_kills':           metrics['total_kills'],
                 'total_extractions':     metrics['total_extractions'],
                 'reward_case':           metrics.get('reward_case', 'unknown'),
+                'stash_budget':          metrics.get('stash_budget', 0),
                 # Lobby composition
                 'lobby_aggr_mean':       metrics['lobby_aggr_mean'],
                 'lobby_aggr_std':        metrics['lobby_aggr_std'],
@@ -229,7 +231,6 @@ class SingleRaidAgent(ABC):
                 'pool_neutral_count':    pool_stats['neutral_count'],
                 'pool_aggressive_count': pool_stats['aggressive_count'],
             }
-            # Merge any extra keys from learning agents
             for k, v in metrics.items():
                 if k not in log_data:
                     log_data[k] = v

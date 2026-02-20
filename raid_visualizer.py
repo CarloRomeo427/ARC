@@ -107,13 +107,11 @@ def _render_to_gif(frames: List[_Frame], game_map, output_path: str, fps: int = 
     ax.set_aspect('equal')
     ax.axis('off')
 
-    # Map boundary
     import matplotlib.patches as mpatches
     boundary = plt.Circle((0, 0), R, fill=False,
                            edgecolor='#0f3460', linewidth=1.5, linestyle='--')
     ax.add_patch(boundary)
 
-    # Loot zones (gold circles, alpha = remaining/total)
     max_items = [max(z.total_items, 1) for z in game_map.loot_zones]
     loot_patches = []
     for z in game_map.loot_zones:
@@ -122,12 +120,10 @@ def _render_to_gif(frames: List[_Frame], game_map, output_path: str, fps: int = 
         ax.add_patch(p)
         loot_patches.append(p)
 
-    # Extraction points
     for e in game_map.extraction_points:
         ax.plot(e.x, e.y, 's', color='#00b4d8', ms=9,
                 markeredgecolor='white', markeredgewidth=0.4, zorder=2)
 
-    # Player scatter
     f0 = frames[0]
     xs = [s.x for s in f0.players]
     ys = [s.y for s in f0.players]
@@ -139,7 +135,6 @@ def _render_to_gif(frames: List[_Frame], game_map, output_path: str, fps: int = 
                        ha='center', va='bottom', color='white',
                        fontsize=8, fontweight='bold')
 
-    # Legend
     import matplotlib.lines as mlines
     legend_items = [
         mlines.Line2D([], [], marker='o', color='w', markerfacecolor='#4cc9f0',
@@ -161,29 +156,22 @@ def _render_to_gif(frames: List[_Frame], game_map, output_path: str, fps: int = 
 
     def update(fi):
         frame = frames[fi]
-
-        # Loot zones
         for i, (patch, mx) in enumerate(zip(loot_patches, max_items)):
             rem = frame.zone_remaining[i] if i < len(frame.zone_remaining) else 0
             patch.set_alpha(0.08 + 0.42 * (rem / mx))
 
-        # Players
         xs_f, ys_f, cs_f, ss_f = [], [], [], []
         for s in frame.players:
             xs_f.append(s.x)
             ys_f.append(s.y)
             if s.extracted:
-                cs_f.append('#00ff88')
-                ss_f.append(75)
+                cs_f.append('#00ff88'); ss_f.append(75)
             elif not s.alive:
-                cs_f.append('#555555')
-                ss_f.append(15)
+                cs_f.append('#555555'); ss_f.append(15)
             elif s.in_combat:
-                cs_f.append('#ffff00')
-                ss_f.append(60)
+                cs_f.append('#ffff00'); ss_f.append(60)
             else:
-                cs_f.append(_aggr_color(s.aggression))
-                ss_f.append(38)
+                cs_f.append(_aggr_color(s.aggression)); ss_f.append(38)
 
         scat.set_offsets(np.c_[xs_f, ys_f])
         scat.set_color(cs_f)
@@ -206,6 +194,12 @@ def render_raid_gif(lobby: List[Player], config: SingleRaidConfig,
     """
     Run one raid with state recording and render to a temporary GIF.
 
+    Mirrors run_single_raid exactly:
+      - game_map.reset(stash_budget)   — budget-proportional loot distribution
+      - spawn permutation              — seed-dependent position assignment
+      - stash_threshold per player     — inherited from persistent Player
+      - personal_zone_scores           — lognormal(0, 0.65) per player per zone
+
     Returns the path to the GIF file, or None if rendering fails.
     The caller is responsible for logging and cleanup.
     """
@@ -217,19 +211,34 @@ def render_raid_gif(lobby: List[Player], config: SingleRaidConfig,
         random.seed(seed)
 
         game_map = GameMap(config, map_seed=config.master_seed)
-        game_map.reset()
+
+        # Budget-proportional loot distribution (required by reset v2)
+        stash_budget = sum(p.stash_threshold for p in lobby)
+        game_map.reset(stash_budget)
 
         spawns = game_map.get_spawn_positions(len(lobby))
-        raid_players = [
-            RaidPlayer(
-                id=i, persistent_id=p.id, x=x, y=y,
-                aggression=p.get_raid_aggression(config.aggression_noise_std),
-            )
-            for i, (p, (x, y)) in enumerate(zip(lobby, spawns))
-        ]
+        # Permute spawn assignment — identical logic to run_single_raid
+        perm = np.random.permutation(len(spawns))
 
-        recorder = _RecordingRaid(game_map, raid_players, config,
-                                  record_interval=8)
+        # Per-player zone score perturbations — same sigma as run_single_raid
+        SCORE_SIGMA = 0.65
+        raid_players = []
+        for i, p in enumerate(lobby):
+            personal_scores = {
+                z.zone_id: z.expected_value_score * np.random.lognormal(0.0, SCORE_SIGMA)
+                for z in game_map.loot_zones
+            }
+            raid_players.append(RaidPlayer(
+                id=i,
+                persistent_id=p.id,
+                x=spawns[perm[i]][0],
+                y=spawns[perm[i]][1],
+                aggression=p.get_raid_aggression(config.aggression_noise_std),
+                stash_threshold=p.stash_threshold,
+                personal_zone_scores=personal_scores,
+            ))
+
+        recorder = _RecordingRaid(game_map, raid_players, config, record_interval=8)
         recorder.run()
 
         if not recorder.frames:

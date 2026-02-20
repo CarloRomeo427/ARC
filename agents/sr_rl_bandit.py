@@ -1,7 +1,8 @@
 """
-RL Bandit Agent for single-raid matchmaking (v3).
+RL Bandit Agent for single-raid matchmaking (v4).
 
-Uses compute_reward_sr (loot + encounters) and entropy annealing.
+Uses compute_reward_sr(results, stash_budget, lobby_size) — stash_budget is
+now passed explicitly from the lobby rather than relying on a calibrated norm.
 """
 
 import torch
@@ -93,8 +94,10 @@ class SRRLBanditAgent(SingleRaidAgent):
 
         rewards: List[float] = []
         all_ris = []
-        for results in all_results:
-            ri = compute_reward_sr(results)
+        for lobby, results in zip(all_lobbies, all_results):
+            # stash_budget is lobby-specific — pass it explicitly, no magic norm
+            stash_budget = sum(p.stash_threshold for p in lobby)
+            ri = compute_reward_sr(results, stash_budget, lobby_size)
             rewards.append(ri['reward'])
             all_ris.append(ri)
 
@@ -119,7 +122,7 @@ class SRRLBanditAgent(SingleRaidAgent):
         grad_norm = nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
         self.optimizer.step()
 
-        # Best lobby for stat updates
+        # Best lobby for stat updates and wandb
         best_j       = int(np.argmax(rewards))
         best_lobby   = all_lobbies[best_j]
         best_results = all_results[best_j]
@@ -148,6 +151,7 @@ class SRRLBanditAgent(SingleRaidAgent):
             'total_kills':         best_ri['total_kills'],
             'total_extractions':   best_ri['total_extractions'],
             'reward_case':         best_ri.get('reward_case', 'unknown'),
+            'stash_budget':        sum(p.stash_threshold for p in best_lobby),
             'reward_mean_samples': float(rewards_t.mean().item()),
             'reward_std_samples':  float(rewards_t.std().item()),
             'lobby_aggr_mean':     float(np.mean(lobby_aggr)),
